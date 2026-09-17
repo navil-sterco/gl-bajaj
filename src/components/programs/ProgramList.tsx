@@ -1,0 +1,211 @@
+"use client"
+import Link from "next/link";
+import { apiFetch } from "@/src/lib/api";
+import PaginationWrapper from "../common/pagination/PaginationWrapper";
+import { APPLY_NOW, BASE_URL } from "@/src/config/config";
+import { useEffect, useState, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
+import ProgramApplyModal from "./ProgramApplyModal";
+import { SkeletonGroup } from "../ui/Skeleton";
+
+interface Program {
+  name: string;
+  duration: string;
+  affiliation: string | null;
+  type: string | null;
+  slug: string;
+}
+
+interface ProgramGroup {
+  name: string;
+  slug: string;
+  programs: Program[];
+}
+
+interface ProgramsData {
+  current_page: number;
+  data: ProgramGroup[];
+  last_page: number;
+  first_page_url: string;
+  last_page_url: string;
+  from: number;
+  links: unknown[];
+}
+
+async function fetchPrograms(type: "under-graduate" | "post-graduate" | "all", page = 1) {
+  const { data, error } = await apiFetch(
+    `programs?type=${type === "all" ? "" : type}&page=${page}`
+  );
+  if (error || !data) return null;
+  return data as { programs: ProgramsData };
+}
+
+function ProgramBox({
+  program,
+  departmentSlug,
+  onApply,
+}: {
+  program: Program;
+  departmentSlug: string;
+  onApply: (departmentSlug: string) => void;
+}) {
+  const cleanName = program.name.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
+
+  return (
+    <div className="program-box">
+      <div className="program-text">
+        <h6>
+          <Link href={`/program/${program.slug}`}>{cleanName}</Link>
+        </h6>
+      </div>
+      <div className="program-right">
+        <div className="duration">
+          <p>Duration</p>
+          <span>{program.duration} years</span>
+        </div>
+        <div className="affiliation">
+          <p>Affiliation</p>
+          <span>{program.affiliation || "-"}</span>
+        </div>
+        <div className="apply-btn">
+          <Link href={APPLY_NOW ?? '/apply-now'}>
+            Apply Now
+          </Link>
+        </div>
+        <div className="program-btn">
+          <Link href={`/program/${program.slug}`}>
+            <span>
+              <img src="/images/icons/right-arrow.svg" alt="arrow" />
+            </span>
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function buildUrl(type: string, page: number) {
+  const params = new URLSearchParams();
+  params.set("type", type);
+  params.set("page", String(page));
+  return `${BASE_URL}programs-offered?${params.toString()}`;
+}
+
+function ProgramGroupSection({
+  group,
+  onApply,
+}: {
+  group: ProgramGroup;
+  onApply: (departmentSlug: string) => void;
+}) {
+  return (
+    <div className="program-list">
+      <h5>{group.name}</h5>
+      {group.programs && group.programs.length > 0 ? (
+        group.programs.map((program) => (
+          <ProgramBox
+            key={program.slug}
+            program={program}
+            departmentSlug={group.slug}
+            onApply={onApply}
+          />
+        ))
+      ) : (
+        <div className="program-box">
+          <p className="no-programs">No programs available.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function ProgramList() {
+  const searchParams = useSearchParams();
+  const paramsType = (searchParams.get("type") as "under-graduate" | "post-graduate" | "all") || "all";
+  const page = Number(searchParams.get("page")) || 1;
+
+  const [programsData, setProgramsData] = useState<ProgramsData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [applyModal, setApplyModal] = useState<{
+    open: boolean;
+    departmentSlug?: string;
+  }>({ open: false });
+
+  const openApplyModal = useCallback((departmentSlug: string) => {
+    setApplyModal({ open: true, departmentSlug });
+  }, []);
+
+  const closeApplyModal = useCallback(() => {
+    setApplyModal({ open: false });
+  }, []);
+
+  useEffect(() => {
+    setLoading(true);
+    fetchPrograms(paramsType, page).then((res) => {
+      setProgramsData(res?.programs ?? null);
+      setLoading(false);
+    });
+  }, [paramsType, page]);
+
+  return (
+    <section className="program-sec">
+      <div className="container25">
+        <div className="col-lg-12">
+          <div className="cus-tab">
+            <div className="tabbed-content">
+              <nav className="tabs">
+                <ul>
+                  {[
+                    { label: "All Courses", type: "all" },
+                    { label: "Under Graduate Courses", type: "under-graduate" },
+                    { label: "Post Graduate Courses", type: "post-graduate" },
+                  ].map(({ label, type }) => (
+                    <li key={type}>
+                      <Link
+                        href={`${BASE_URL}programs-offered?type=${type}&page=1`}
+                        className={paramsType === type ? "active" : ""}
+                      >
+                        {label}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+
+              <div className="item">
+                <div className="item-content">
+                  {loading ? (
+                    <SkeletonGroup count={6} wrapperClassName="!block gap-[3rem]" className="w-full h-[25rem] !mb-[3rem]" />
+                  ) : programsData &&  programsData.data.length > 0 ? (
+                    programsData.data.map((group) => {
+                      return <ProgramGroupSection
+                        key={group.slug}
+                        group={group}
+                        onApply={openApplyModal}
+                      />
+                    })
+                  ) : (
+                    <p>No programs found.</p>
+                  )}
+
+                  {programsData && (
+                    <PaginationWrapper
+                    currentPage={programsData.current_page || 1}
+                    totalPages={programsData.last_page || 1}
+                  />
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* <ProgramApplyModal
+        open={applyModal.open}
+        departmentSlug={applyModal.departmentSlug}
+        onClose={closeApplyModal}
+      /> */}
+    </section>
+  );
+}
